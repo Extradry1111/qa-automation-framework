@@ -21,3 +21,46 @@ on a shared public practice site, but the intended approach would be:
 - Baseline captured in CI on a schedule, with a regression threshold (e.g.
   p95 latency increase >20%) failing the build rather than a hard pass/fail
   number, since absolute latency varies by environment.
+## API Test Reliability Against automationexercise.com (Found During CI Setup)
+
+While setting up CI for this project, the API test suite showed intermittent
+and eventually consistent failures against the live target — not from a code
+defect, but from a genuine limitation worth documenting rather than silently
+working around.
+
+**What was observed:**
+- Some requests returned HTTP 200 with an HTML body (`<!DOCTYPE...`) instead
+  of the expected JSON.
+- One request (`searchProduct`) returned a hard `403 Forbidden`.
+
+**Root cause:** automationexercise.com is protected by a bot-detection layer
+that, for suspicious traffic, serves a JavaScript-based challenge page (the
+"checking your browser" pattern) instead of the real API response. A
+User-Agent header change — the fix that resolved an analogous issue in the
+companion [Postman collection](../postman-api-collection) and
+[k6 scripts](../k6-performance-testing) — does **not** resolve this, because
+the challenge requires actually executing JavaScript to pass, which a raw
+HTTP client (Playwright's `APIRequestContext`, k6, Newman, curl) cannot do.
+
+This is also the likely explanation for why the **UI** test suite became
+substantially more reliable after switching to the `channel: 'chrome'`
+launch option (see `playwright.config.ts`): a real browser executes the
+challenge's JavaScript automatically and passes it, where a plain HTTP
+request cannot.
+
+**Conclusion:** pure API-layer testing (no browser engine) against a target
+with JS-based bot protection is inherently unreliable unless the client can
+execute JavaScript — this isn't something a header, retry, or delay setting
+can fix. This is worth knowing and stating plainly rather than chasing false
+fixes indefinitely.
+
+**What this means for this test suite:**
+- The API tests in `tests/api/` remain a correct reference implementation of
+  the intended contract (see `docs/SAMPLE_BUG_REPORT.md` for one real API
+  contract issue found this way) — they are written the way they should be
+  run in an environment without this protection layer (e.g. a staging
+  environment, or a target that allowlists CI IPs).
+- In a real work setting, the actual fix would be a conversation with the
+  team that owns the target: either allowlist the CI runner's IP range, or
+  provide a staging endpoint without the bot-detection layer for automated
+  testing — not something to solve unilaterally from the test client side.
