@@ -47,6 +47,7 @@ test.describe('Login and logout @smoke', () => {
 
     await home.open();
     await home.goToLogin();
+    await signup.completeSignup(user);
     await login.login(INVALID_CREDENTIALS.email, INVALID_CREDENTIALS.password);
 
     await expect(login.loginErrorText).toBeVisible();
