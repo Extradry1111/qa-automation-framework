@@ -14,6 +14,14 @@ dotenv.config();
  *   parallelize them as separate jobs if the suite grows.
  * - CI gets stricter defaults (forbidOnly, retries, single worker for stability)
  *   than local dev, controlled by the standard process.env.CI flag Playwright sets.
+ * - CI runs with a single worker (workers: 1), not 2 — automationexercise.com
+ *   is a shared public practice site with rate-limiting/anti-bot protection that
+ *   triggers false failures ("Account Created!" not appearing) when multiple
+ *   signups fire within the same short window from concurrent workers. This
+ *   was observed directly: the first signup in a run succeeded, a later
+ *   parallel signup failed identically seconds later — a rate-limit signature,
+ *   not a code bug. Running serially in CI trades a bit of speed for reliability
+ *   against a shared third-party target.
  */
 export default defineConfig({
   testDir: './tests',
@@ -24,7 +32,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : Number(process.env.RETRIES ?? 0),
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 1 : undefined,
 
   reporter: [
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
@@ -75,6 +83,15 @@ export default defineConfig({
       testDir: './tests/api',
       use: {
         baseURL: process.env.API_BASE_URL ?? 'https://automationexercise.com/api',
+        // Playwright's default API request User-Agent gets blocked by this
+        // target's WAF — it returns an HTML page instead of JSON (same root
+        // cause documented in the Postman and k6 companion projects in this
+        // portfolio). A standard browser User-Agent avoids that.
+        extraHTTPHeaders: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept: 'application/json, text/plain, */*',
+        },
       },
     },
   ],
