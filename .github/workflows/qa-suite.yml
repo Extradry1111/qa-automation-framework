@@ -1,0 +1,76 @@
+name: QA Automation Suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
+
+jobs:
+  api-tests:
+    name: API tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API test suite
+        run: npm run test:api
+        env:
+          API_BASE_URL: https://automationexercise.com/api
+
+      - name: Upload API test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  ui-tests:
+    name: UI tests (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run UI test suite
+        run: npm run test:ui
+        env:
+          BASE_URL: https://automationexercise.com
+
+      - name: Upload UI test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload traces for failed tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-failure-traces
+          path: test-results/
+          retention-days: 14
