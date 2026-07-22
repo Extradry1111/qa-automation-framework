@@ -12,16 +12,22 @@ dotenv.config();
  * - UI and API tests are split into separate Playwright "projects" so they can be
  *   run independently (`npm run test:ui` vs `npm run test:api`) and so CI can
  *   parallelize them as separate jobs if the suite grows.
- * - CI gets stricter defaults (forbidOnly, retries, single worker for stability)
- *   than local dev, controlled by the standard process.env.CI flag Playwright sets.
- * - CI runs with a single worker (workers: 1), not 2 — automationexercise.com
- *   is a shared public practice site with rate-limiting/anti-bot protection that
- *   triggers false failures ("Account Created!" not appearing) when multiple
- *   signups fire within the same short window from concurrent workers. This
- *   was observed directly: the first signup in a run succeeded, a later
- *   parallel signup failed identically seconds later — a rate-limit signature,
- *   not a code bug. Running serially in CI trades a bit of speed for reliability
- *   against a shared third-party target.
+ * - CI runs with a single worker (workers: 1) to reduce load against a shared
+ *   public target site, though the deeper cause of UI flakiness turned out to
+ *   be bot-detection (see ui-chromium project below), not concurrency alone.
+ * - ui-chromium uses the real "chrome" channel + a disabled automation-control
+ *   flag rather than Playwright's bundled Chromium, because this target's
+ *   bot-detection was intermittently blocking form submissions from bundled
+ *   headless Chromium's default fingerprint. Real Chrome's fingerprint is far
+ *   less commonly flagged. This is a standard technique when automating
+ *   against sites with bot detection, and worth documenting here rather than
+ *   silently working around.
+ * - The api project sets `userAgent` (not just extraHTTPHeaders) for the same
+ *   underlying reason — Playwright's default API request User-Agent
+ *   ("Playwright/x.y.z") gets soft-blocked by this target's WAF, which returns
+ *   HTTP 200 with an HTML challenge page instead of JSON. extraHTTPHeaders
+ *   alone did not reliably override the built-in User-Agent header; the
+ *   dedicated `userAgent` option does.
  */
 export default defineConfig({
   testDir: './tests',
@@ -54,8 +60,12 @@ export default defineConfig({
       testDir: './tests/ui',
       use: {
         ...devices['Desktop Chrome'],
+        channel: 'chrome',
         baseURL: process.env.BASE_URL ?? 'https://automationexercise.com',
         headless: process.env.HEADLESS !== 'false',
+        launchOptions: {
+          args: ['--disable-blink-features=AutomationControlled'],
+        },
       },
     },
     {
@@ -83,13 +93,9 @@ export default defineConfig({
       testDir: './tests/api',
       use: {
         baseURL: process.env.API_BASE_URL ?? 'https://automationexercise.com/api',
-        // Playwright's default API request User-Agent gets blocked by this
-        // target's WAF — it returns an HTML page instead of JSON (same root
-        // cause documented in the Postman and k6 companion projects in this
-        // portfolio). A standard browser User-Agent avoids that.
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         extraHTTPHeaders: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           Accept: 'application/json, text/plain, */*',
         },
       },
