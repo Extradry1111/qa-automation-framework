@@ -51,6 +51,7 @@ test.describe('User registration @smoke', () => {
     // Second signup attempt with the same email should be rejected.
     await login.open();
     await login.startSignup(user.name, user.email);
+    await signup.completeSignup(user);
     await expect(login.signupErrorText).toBeVisible();
   });
 });
